@@ -26,10 +26,11 @@
 
 import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, unref, watch, watchEffect } from 'vue';
 
+import { useLocale } from '@bkui-vue/config-provider';
 import { debounce, resolveClassName } from '@bkui-vue/shared';
 import VirtualRender from '@bkui-vue/virtual-render';
 
-import { COL_MIN_WIDTH, COLUMN_ATTRIBUTE, EMIT_EVENT_TYPES, EMIT_EVENTS, EVENTS, PROVIDE_KEY_INIT_COL, TABLE_ROW_ATTRIBUTE } from './const';
+import { COL_MIN_WIDTH, COLUMN_ATTRIBUTE, EMIT_EVENT_TYPES, EMIT_EVENTS, EVENTS, PROVIDE_KEY_INIT_COL, SCROLLY_WIDTH, TABLE_ROW_ATTRIBUTE } from './const';
 import usePagination from './plugins/use-pagination';
 import useScrollLoading from './plugins/use-scroll-loading';
 import { tableProps } from './props';
@@ -48,11 +49,12 @@ export default defineComponent({
   props: tableProps,
   emits: EMIT_EVENT_TYPES,
   setup(props, ctx) {
+    const t = useLocale('table');
+
     let columnSortFn: any = null;
     let activeSortColumn: any = null;
     let columnFilterFn: any = null;
 
-    let observerIns = null;
     const targetColumns = reactive([]);
     const { initColumns } = useColumn(props, targetColumns);
     provide(PROVIDE_KEY_INIT_COL, initColumns);
@@ -67,7 +69,9 @@ export default defineComponent({
       dragOffsetX,
       reactiveSchema,
       indexData,
-      renderFixedColumns,
+      fixedColumns,
+      resolveColumnStyle,
+      resolveColumnClass,
       setRowExpand,
       initIndexData,
       fixedWrapperClass,
@@ -88,13 +92,17 @@ export default defineComponent({
       wrapperStyle,
       contentStyle,
       headStyle,
+      hasScrollYRef,
       updateBorderClass,
       resetTableHeight,
       getColumnsWidthOffsetWidth,
       hasFooter,
     } = useClass(props, targetColumns, root, reactiveSchema, pageData);
 
-    const tableRender = new TableRender(props, ctx, reactiveSchema, colgroups);
+    const styleRef = computed(() => ({
+      hasScrollY: hasScrollYRef.value,
+    }));
+    const tableRender = new TableRender(props, ctx, reactiveSchema, colgroups, styleRef, t);
 
     const updateOffsetRight = () => {
       const $tableContent = root.value.querySelector('.bk-table-body-content');
@@ -209,26 +217,34 @@ export default defineComponent({
       updateOffsetRight();
     };
 
+    const scrollTo = (option = { left: 0, top: 0 }) => {
+      refVirtualRender.value?.scrollTo?.(option);
+    };
+
     onMounted(() => {
-      observerIns = observerResize(root.value, () => {
-        if (!root.value) {
-          return;
-        }
-        if (props.height === '100%' || props.height === 'auto') {
-          resetTableHeight(root.value);
-        }
+      if (props.observerResize) {
+        let observerIns = observerResize(root.value, () => {
+          if (!root.value) {
+            return;
+          }
+          if (props.height === '100%' || props.height === 'auto') {
+            resetTableHeight(root.value);
+          }
 
-        updateBorderClass(root.value);
-        const offset = getColumnsWidthOffsetWidth();
-        resolveColumnWidth(root.value, colgroups, 20, offset);
-      }, 180, true, props.resizerWay);
+          updateBorderClass(root.value);
+          const offset = getColumnsWidthOffsetWidth();
+          resolveColumnWidth(root.value, colgroups, 20, offset);
+        }, 180, true, props.resizerWay);
 
-      observerIns.start();
+        observerIns.start();
+        onBeforeUnmount(() => {
+          observerIns.disconnect();
+          observerIns = null;
+        });
+      }
     });
 
     onBeforeUnmount(() => {
-      observerIns.disconnect();
-      observerIns = null;
       tableRender.destroy();
     });
 
@@ -239,6 +255,7 @@ export default defineComponent({
       toggleRowSelection,
       getSelection,
       clearSort,
+      scrollTo,
     });
 
     const tableBodyClass = computed(() => ({
@@ -282,6 +299,11 @@ export default defineComponent({
       '--footer-height': hasFooter.value ? `${props.paginationHeihgt}px` : '0',
     }));
 
+    const fixedContainerStyle = computed(() => ({
+      right: hasScrollYRef.value ? `${SCROLLY_WIDTH}px` : 0,
+      ...footerStyle.value,
+    }));
+
     const { renderScrollLoading } = useScrollLoading(props, ctx);
     const scrollClass = computed(() => (props.virtualEnabled ? {} : { scrollXName: '', scrollYName: '' }));
 
@@ -315,8 +337,16 @@ export default defineComponent({
           }
       </VirtualRender>
       {/* @ts-ignore:next-line */}
-      <div class={ fixedWrapperClass } style={ footerStyle.value }>
-        { renderFixedColumns(reactiveSchema.scrollTranslateX, tableOffsetRight.value) }
+      <div class={ fixedWrapperClass } style={ fixedContainerStyle.value }>
+        {
+          fixedColumns.value
+            .map(({ isExist, colPos, column }) => {
+              console.log('fixedWrapperClass');
+              return (isExist ? '' : <div
+              class={ resolveColumnClass(column, reactiveSchema.scrollTranslateX, tableOffsetRight.value) }
+              style={ resolveColumnStyle(colPos) }></div>);
+            })
+        }
         <div class={ resizeColumnClass } style={ resizeColumnStyle.value }></div>
         <div class={ loadingRowClass }>{
           renderScrollLoading()
@@ -332,4 +362,3 @@ export default defineComponent({
     </div>;
   },
 });
-

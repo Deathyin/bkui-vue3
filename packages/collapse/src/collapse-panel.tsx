@@ -23,31 +23,37 @@
 * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 * IN THE SOFTWARE.
 */
-import { defineComponent, h, inject, Ref, ref, Transition, watch } from 'vue';
+import { defineComponent, h, inject, Ref, ref, watch } from 'vue';
 
+import BKCollapseTransition from '@bkui-vue/collapse-transition';
 import { AngleRight } from '@bkui-vue/icon';
 
 import { propsCollapsePanel as props } from './props';
-import { collapseMotion } from './utils';
 
 export default defineComponent({
   name: 'CollapsePanel',
   props,
   emits: ['change', 'update:modelValue', 'after-leave', 'before-enter'],
   setup(props, { emit, slots }) {
-    const localActiveItems = inject<Ref<(string | number)[]>>('localActiveItems');
-    const handleItemClick = inject<(value: Partial<{name: string}>) => void>('handleItemClick');
+    let localActiveItems = null;
+    let handleItemClick = null;
     const isActive = ref(props.modelValue);
     watch(() => props.modelValue, (newVal) => {
       isActive.value = newVal;
     });
-    watch(localActiveItems, (newVal) => {
-      if (newVal?.length) {
-        isActive.value = newVal.includes(props.name);
-      }
-    }, {
-      immediate: true,
-    });
+    // 如果单独使用，避免报 injection "*" not found. 相比getCurrentInstance()?.parent.type.name 方法简洁
+    if (!props.alone) {
+      localActiveItems = inject<Ref<(string|number)[]>>('localActiveItems');
+      handleItemClick = inject<(value: Partial<{ name: string }>) => void>('handleItemClick');
+      watch(localActiveItems, (newVal) => {
+        if (newVal?.length) {
+          isActive.value = newVal.includes(props.name);
+        }
+      }, {
+        immediate: true,
+      });
+    }
+
 
     function clickItem(props) {
       const { disabled, name, itemClick } = props;
@@ -65,8 +71,6 @@ export default defineComponent({
       }
     }
 
-
-    const transition = ref(collapseMotion(emit));
 
     function getContent() {
       if (props.content) {
@@ -108,8 +112,8 @@ export default defineComponent({
       }
 
       return (
-        <div class='bk-collapse-header'>
-          <span class='bk-collapse-title'>
+        <div class="bk-collapse-header">
+          <span class="bk-collapse-title">
             {title}
           </span>
           {<AngleRight class={`bk-collapse-icon ${(isActive.value && 'rotate-icon') || ''}`}/>}
@@ -123,11 +127,11 @@ export default defineComponent({
         <div onClick={() => clickItem(props)}>
           {renderHeader()}
         </div>
-        <Transition {...transition.value}>
+        <BKCollapseTransition>
           {
             renderPanel()
           }
-        </Transition>
+        </BKCollapseTransition>
       </div>
     );
   },

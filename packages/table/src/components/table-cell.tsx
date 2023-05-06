@@ -24,11 +24,12 @@
 * IN THE SOFTWARE.
 */
 import { defineComponent, onBeforeUnmount, onMounted, ref } from 'vue';
+import { toType } from 'vue-types';
 
 import { bkEllipsisInstance } from '@bkui-vue/directives';
-import { hasOverflowEllipsis, isElement, PropTypes  } from '@bkui-vue/shared';
+import { hasOverflowEllipsis, isElement, PropTypes } from '@bkui-vue/shared';
 
-import { IOverflowTooltip, overflowModeType } from '../props';
+import { IOverflowTooltip, overflowModeType, ResizerWay } from '../props';
 import { observerResize } from '../utils';
 // import
 export default defineComponent({
@@ -43,6 +44,10 @@ export default defineComponent({
       mode: overflowModeType,
     })]).def(undefined),
     title: PropTypes.string.def(undefined),
+    observerResize: PropTypes.bool.def(true),
+    resizerWay: toType<`${ResizerWay}`>('ResizerWay', {
+      default: ResizerWay.DEBOUNCE,
+    }),
   },
 
   setup(props, { slots }) {
@@ -58,11 +63,11 @@ export default defineComponent({
     };
 
     const { showOverflowTooltip = false } = resolveSetting();
-    let observerIns = null;
     let bkEllipsisIns = null;
 
     const resolveTooltipOption = () => {
       let disabled = true;
+      let { resizerWay } = props;
       let content = refRoot.value.innerText;
       let mode = 'auto';
       if (typeof showOverflowTooltip === 'boolean') {
@@ -71,6 +76,7 @@ export default defineComponent({
 
       if (typeof showOverflowTooltip === 'object') {
         disabled = showOverflowTooltip.disabled;
+        resizerWay = showOverflowTooltip.resizerWay || 'debounce';
         content = showOverflowTooltip.content || refRoot.value.innerText;
         if (typeof showOverflowTooltip.content === 'function') {
           content = showOverflowTooltip.content(props.column, props.row);
@@ -83,7 +89,7 @@ export default defineComponent({
         disabled = Reflect.apply(disabled, this, [props.column, props.row]);
       }
 
-      return { disabled, content, mode };
+      return { disabled, content, mode, resizerWay };
     };
 
     const resolveOverflowTooltip = () => {
@@ -114,16 +120,20 @@ export default defineComponent({
     };
 
     onMounted(() => {
-      const { disabled } = resolveTooltipOption();
+      const { disabled, resizerWay } = resolveTooltipOption();
       if (!disabled) {
         resolveOverflowTooltip();
 
-        if (props.column.showOverflowTooltip?.watchCellResize !== false) {
-          observerIns = observerResize(refRoot.value, () => {
+        if (props.column.showOverflowTooltip?.watchCellResize !== false && props.observerResize) {
+          let observerIns = observerResize(refRoot.value, () => {
             resolveOverflowTooltip();
-          }, 60, true);
+          }, 60, true, resizerWay);
 
           observerIns.start();
+          onBeforeUnmount(() => {
+            observerIns.disconnect();
+            observerIns = null;
+          });
         }
       }
     });
